@@ -47,6 +47,9 @@ LENGTHS = [('wall', 'WallThickness', 'Wall thickness'),
            ('depth', 'Depth', 'Depth')]
 POSITIVE = ('wall', 'strut', 'radius')  # minwidth may be 0, meaning off
 
+FACE_ATTR_GROUP = 'FTCTools'
+FACE_ATTR = 'lighten_face_point'  # a point of the picked face, see _picked_face
+
 # The pocket solid starts this far above the face so the cut has no coplanar faces.
 LIFT = 0.001  # cm
 OVERLAY_COLOR = (255, 255, 255)  # preview outline
@@ -435,9 +438,11 @@ def _create_feature(v, solid):
     # holds exactly this solid, so that compute is skipped.
     _creating[0] = True
     try:
-        return comp.features.customFeatures.add(cf_input)
+        feature = comp.features.customFeatures.add(cf_input)
     finally:
         _creating[0] = False
+    _remember_face(feature, v['face'])
+    return feature
 
 
 def _extent_index(mode):
@@ -620,6 +625,7 @@ def _edit_execute(args):
     # The timeline is still rolled back to before this feature, so these
     # changes cost one recompute when it rolls forward, not one each.
     _sync_dependencies(feature, v)
+    _remember_face(feature, v['face'])
     # Each write costs time on a live feature even when the value is the same.
     for key, _, _ in LENGTHS:
         param = feature.parameters.itemById(key)
@@ -730,7 +736,7 @@ def _dependencies(feature, skip_lost=False):
             raise LightenError('Lost the reference "%s". Edit the feature and reselect it.' % dep.id,
                                'FEATURE_REFERENCE_LOST')
         if dep.id == 'face':
-            face = dep.entity
+            face = _picked_face(feature, dep.entity)
         elif dep.id == 'upto':
             upto = dep.entity
         elif dep.id.startswith('strut'):
@@ -738,6 +744,49 @@ def _dependencies(feature, skip_lost=False):
         elif dep.id.startswith('exclude'):
             exclude.append((int(dep.id[7:]), dep.entity))
     return face, [e for _, e in sorted(struts)], [e for _, e in sorted(exclude)], upto
+
+
+def _remember_face(feature, face):
+    """Store a point of the picked face on the feature (see _picked_face)."""
+    p = _native(face).pointOnFace
+    feature.attributes.add(FACE_ATTR_GROUP, FACE_ATTR, json.dumps([p.x, p.y, p.z]))
+
+
+def _picked_face(feature, face):
+    """The face the user picked, given the one the dependency resolved to.
+
+    When an earlier feature split a face into coplanar pieces (text joined
+    onto a plate leaves an island inside each closed letter), Fusion tracks
+    the pieces as siblings, and once Lighten has cut one the dependency can
+    come back as another. The point stored at pick time says which one it
+    was. Features made before the point was stored keep what Fusion gives.
+    """
+    attr = feature.attributes.itemByName(FACE_ATTR_GROUP, FACE_ATTR)
+    if attr is None:
+        return face
+    point = adsk.core.Point3D.create(*json.loads(attr.value))
+    native = _native(face)
+    if native.geometry.objectType != adsk.core.Plane.classType() or _has_point(native, point):
+        return face
+    plane = native.geometry
+    for other in native.body.faces:
+        if other == native or other.geometry.objectType != adsk.core.Plane.classType():
+            continue
+        g = other.geometry
+        if not g.normal.isParallelTo(plane.normal) or abs(plane.origin.vectorTo(g.origin).dotProduct(plane.normal)) > PLANE_TOL:
+            continue
+        if _has_point(other, point):
+            return other.createForAssemblyContext(face.assemblyContext) if face.assemblyContext else other
+    return face
+
+
+def _has_point(face, point):
+    ev = face.evaluator
+    ok, param = ev.getParameterAtPoint(point)
+    if not ok:
+        return False
+    ok, on_surface = ev.getPointAtParameter(param)
+    return ok and on_surface.distanceTo(point) < PLANE_TOL and ev.isParameterOnFace(param)
 
 
 # ------------------------------------------------------------------ geometry

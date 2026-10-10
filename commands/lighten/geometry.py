@@ -27,6 +27,7 @@ UNION = adsk.fusion.BooleanTypes.UnionBooleanType
 INTERSECTION = adsk.fusion.BooleanTypes.IntersectionBooleanType
 EPS = 1e-7  # cm
 SLIVER = 1e-5  # cm: a region thinner than this is boolean debris, not a pocket
+CHORD = 2e-3   # cm: how far the straight pieces standing in for a spline may stray from it
 
 
 class LightenError(Exception):
@@ -98,6 +99,9 @@ def band(curve, normal, half):
 
     Lines give a rectangle, arcs an annular sector (a pie slice when the arc is
     tighter than `half`), circles an annulus (a disk when tighter than `half`).
+    Splines and ellipses (text outlines, for one) have no exact offset: they
+    are followed with straight pieces within CHORD, a rectangle for each and
+    a disk at each joint between them.
     """
     kind = curve.objectType
     if kind == adsk.core.Line3D.classType():
@@ -133,7 +137,14 @@ def band(curve, normal, half):
                      adsk.core.Line3D.create(_scaled(c, end, r_in), _scaled(c, end, r_out))]
         return _face(edges)
 
-    raise LightenError('Only lines, arcs and circles are supported (got %s).' % kind.split('::')[-1])
+    ev = curve.evaluator
+    _, t0, t1 = ev.getParameterExtents()
+    ok, points = ev.getStrokes(t0, t1, CHORD)
+    if not ok or len(points) < 2:
+        raise LightenError('Could not follow a %s edge.' % kind.split('::')[-1])
+    pieces = [band(adsk.core.Line3D.create(points[i], points[i + 1]), normal, half) for i in range(len(points) - 1)]
+    pieces += [_disk(p, normal, half) for p in points[1:-1]]
+    return _union_all([p for p in pieces if p is not None])
 
 
 def swept_boundary(region, normal, dist):
