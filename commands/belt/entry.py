@@ -269,7 +269,7 @@ def _nearest(v):
     _, _, _, dist = _placement(v['center'], v['plane'], v['toward'], v['flip'])
     if dist is None:
         raise PulleyError('Pick pulley 2.')
-    return body.nearest_teeth(v['profile'], dist, v['teeth1'], v['teeth2'])
+    return body.nearest_teeth(v['profile'], dist - _tolerance(v['center'], v['toward']), v['teeth1'], v['teeth2'])
 
 
 def _auto_solve(v):
@@ -451,7 +451,8 @@ def _show_status(inputs, v):
     try:
         dist = _placement(v['center'], v['plane'], v['toward'], v['flip'])[3]
         if dist is not None:
-            gap = body.center_distance(v['profile'], v['belt_teeth'], v['teeth1'], v['teeth2']) - dist
+            gap = (body.center_distance(v['profile'], v['belt_teeth'], v['teeth1'], v['teeth2'])
+                   + _tolerance(v['center'], v['toward']) - dist)
             if abs(gap) > FIT_TOLERANCE:
                 lines.append('%s off P2' % um.formatInternalValue(abs(gap), um.defaultLengthUnits, True))
             if _auto_solve(v):
@@ -481,7 +482,7 @@ def _draw_preview(inputs):
     _show_center_distance(inputs, v)
     _show_status(inputs, v)
     try:
-        comp, frame, phase, _ = _placement(v['center'], v['plane'], v['toward'], v['flip'])
+        comp, frame, phase, _ = _placement(v['center'], v['plane'], v['toward'], v['flip'], _edit.get('feature'))
         solid = _solid(_options(v, phase), frame)
     except PulleyError:
         return
@@ -675,7 +676,7 @@ def _edit_execute(args):
     v = _read_inputs(args.command.commandInputs)
     # Values that can't make a belt: say why, as create does, and change nothing.
     try:
-        _, frame, phase, _ = _placement(v['center'], v['plane'], v['toward'], v['flip'])
+        _, frame, phase, _ = _placement(v['center'], v['plane'], v['toward'], v['flip'], feature)
         _solid(_options(v, phase), frame)
     except PulleyError as e:
         ui.messageBox(str(e), 'Belt')
@@ -731,13 +732,15 @@ def _compute(args):
         deps = _dependencies(feature)
         _follow_circles(feature, deps)
         v = _feature_values(feature)
-        _, frame, phase, dist = _placement(deps['center'], deps.get('plane'), deps.get('toward'), v['flip'])
+        _, frame, phase, dist = _placement(deps['center'], deps.get('plane'), deps.get('toward'), v['flip'], feature)
         p = feature.parameters
         o = {'profile': v['profile'], 'belt_teeth': v['belt_teeth'], 'teeth1': v['teeth1'], 'teeth2': v['teeth2'],
              'width': p.itemById('width').value, 'offset': p.itemById('offset').value, 'phase': phase}
         auto = links.param(feature, 'auto')
+        # Pulley 2 is meant to sit the center distance's tolerance off the fit.
+        fit = dist - _tolerance(deps['center'], deps.get('toward')) if dist is not None else None
         if auto is not None and auto.value > 0.5 and dist is not None:
-            o['belt_teeth'] = body.nearest_teeth(v['profile'], dist, v['teeth1'], v['teeth2'])
+            o['belt_teeth'] = body.nearest_teeth(v['profile'], fit, v['teeth1'], v['teeth2'])
             if o['belt_teeth'] != v['belt_teeth']:
                 # Keep the parameter showing the re-solved count. Writing it
                 # here doesn't trigger another compute.
@@ -754,7 +757,7 @@ def _compute(args):
         if not updated:
             raise PulleyError('Could not update the belt body.')
         if dist is not None:
-            gap = body.center_distance(v['profile'], o['belt_teeth'], v['teeth1'], v['teeth2']) - dist
+            gap = body.center_distance(v['profile'], o['belt_teeth'], v['teeth1'], v['teeth2']) - fit
             if abs(gap) > FIT_TOLERANCE:
                 # Yellow in the timeline. Custom features can't show their own
                 # text, so the reason goes to the Text Commands log. The empty
@@ -847,6 +850,14 @@ def _center_and_plane(center, plane):
     return center, plane
 
 
+def _tolerance(center, toward):
+    """The tolerance of the center distance dimensioned between the two
+    pulleys, cm: pulley 2 is meant to be that far off where the belt fits."""
+    found = center_distance.between(_center_and_plane(center, None)[0], _center_and_plane(toward, None)[0])
+    tol = center_distance.tolerance(found[0]) if found else None
+    return tol.value if tol else 0.0
+
+
 def _point_in(entity, comp, comp_occ):
     """A center pick's position in comp's space (comp_occ: comp's occurrence
     in pulley 1's assembly path, or None)."""
@@ -870,19 +881,19 @@ def _point_in(entity, comp, comp_occ):
     return p
 
 
-def _placement(center, plane, toward, flip):
+def _placement(center, plane, toward, flip, feature=None):
     """(component, (origin, x, y, z), phase, distance). x points at pulley 2
     (the plane's x axis without one); phase is the angle, in the belt's frame,
     of pulley 1's grooves, so a Pulley on the same center meshes with the belt;
     distance is pulley 2's center from pulley 1's in the belt plane (None
     without pulley 2)."""
     center, plane = _center_and_plane(center, plane)
-    comp, (origin, fx, fy, z) = pulley_entry._placement(center, plane)
+    comp, (origin, fx, fy, z) = pulley_entry._placement(center, plane, feature)
     d = fx.copy()
     dist = None
     if toward is not None:
         target, _ = _center_and_plane(toward, None)
-        d = origin.vectorTo(_point_in(target, comp, pulley_entry._space(center)[1]))
+        d = origin.vectorTo(_point_in(target, comp, pulley_entry._space(center, feature)[1]))
         along = z.copy()
         along.scaleBy(d.dotProduct(z))
         d.subtract(along)

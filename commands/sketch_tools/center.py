@@ -13,7 +13,8 @@ edit box stays short:
 C0 is inlined, so the parameters added are <Name>, the belt's (<Name>_BeltTeeth
 or <Name>_BeltLength) and tooth counts for picks that aren't Pulley & Gear Diameter
 circles. One step is within 0.002 mm of exact even for a 5:1 ratio packed
-tight, and ~1e-9 mm for normal layouts.
+tight, and ~1e-9 mm for normal layouts. <Name>_Tolerance is added on top, to
+set the pulleys apart by more (or less) than the belt's exact fit.
 
 To edit one, double-click its dimension (or right-click, Edit Center
 Distance): the dialog reopens with its two entities and values.
@@ -41,7 +42,8 @@ EDIT_CMD_ID = 'FTCTools_CenterDistanceEdit'
 ICONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'center')
 MODES = [('teeth', 'Belt teeth'), ('length', 'Belt length')]
 CC_ATTR = 'center:'   # design attribute per dimension name: profile and belt mode
-DEFAULTS = {'profile': 'htd_5', 'teeth1': 24, 'teeth2': 36, 'mode': 'teeth', 'belt_teeth': 90, 'belt_length': '450 mm'}
+DEFAULTS = {'profile': 'htd_5', 'teeth1': 24, 'teeth2': 36, 'mode': 'teeth', 'belt_teeth': 90, 'belt_length': '450 mm',
+            'tolerance': '0 mm'}
 
 _handlers = []
 _ui_handlers = []   # (UI event, handler): these outlive commands and must come off in stop
@@ -93,9 +95,10 @@ def _match(entity):
     return entity if _our_name(entity) else None
 
 
-def expression(key, t1, t2, length):
+def expression(key, t1, t2, length, tolerance=None):
     """The center distance from tooth-count expressions t1, t2 (parameter
-    names or numbers) and a belt pitch-length expression."""
+    names or numbers) and a belt pitch-length expression, plus a tolerance
+    expression if given."""
     p = common.mm(profiles.profile(key)['pitch'])
     d = '((%s - %s) * %s / (2 * PI))' % (t2, t1, p)
     wrap = '(%s + %s) * %s / 2' % (t1, t2, p)             # pi (r1 + r2)
@@ -106,7 +109,14 @@ def expression(key, t1, t2, length):
         phi = 'asin(%s / %s)' % (d, prev)
         return '%s - (2 * %s * cos(%s) + %s + 2 * (%s / 1 rad) * %s - %s) / (2 * cos(%s))' % (
             prev, prev, phi, wrap, phi, d, length, phi)
-    return newton('(%s)' % c0)
+    exact = newton('(%s)' % c0)
+    return exact if tolerance is None else '%s + %s' % (exact, tolerance)
+
+
+def tolerance(name):
+    """The tolerance parameter of center distance `name`, or None: ones made
+    before there was a tolerance have none."""
+    return common.design().userParameters.itemByName(name + '_Tolerance')
 
 
 # -------------------------------------------------------------------- dialog
@@ -129,6 +139,9 @@ def _created(args):
     inputs.addValueInput('belt_length', 'Belt length', common.design().unitsManager.defaultLengthUnits,
                          adsk.core.ValueInput.createByString(DEFAULTS['belt_length']))
     inputs.itemById('belt_length').tooltip = 'Pitch length (circumference at the pitch line).'
+    inputs.addValueInput('tolerance', 'Tolerance', common.design().unitsManager.defaultLengthUnits,
+                         adsk.core.ValueInput.createByString(DEFAULTS['tolerance']))
+    inputs.itemById('tolerance').tooltip = 'Added to the center distance, e.g. for belt stretch.'
     inputs.addTextBoxCommandInput('result', 'Center distance', '', 1, True)
     _refresh(inputs)
 
@@ -172,7 +185,8 @@ def _read(inputs):
             'teeth1': inputs.itemById('teeth1').value, 'teeth2': inputs.itemById('teeth2').value,
             'mode': next(k for k, l in MODES if l == inputs.itemById('mode').selectedItem.name),
             'belt_teeth': inputs.itemById('belt_teeth').value,
-            'belt_length': inputs.itemById('belt_length').expression}
+            'belt_length': inputs.itemById('belt_length').expression,
+            'tolerance': inputs.itemById('tolerance').expression}
 
 
 def _refresh(inputs):
@@ -189,12 +203,13 @@ def _refresh(inputs):
 
 def center_distance(v):
     pitch = profiles.profile(v['profile'])['pitch']
+    um = common.design().unitsManager
     if v['mode'] == 'teeth':
         belt_teeth = v['belt_teeth']
     else:
-        um = common.design().unitsManager
         belt_teeth = um.evaluateExpression(v['belt_length'], um.defaultLengthUnits) / pitch
-    return belt_body.center_distance(v['profile'], belt_teeth, v['teeth1'], v['teeth2'])
+    return (belt_body.center_distance(v['profile'], belt_teeth, v['teeth1'], v['teeth2'])
+            + um.evaluateExpression(v['tolerance'], um.defaultLengthUnits))
 
 
 def _on_select(args):
@@ -238,6 +253,9 @@ def _load_existing(inputs, v):
         inputs.itemById('belt_teeth').value = int(round(belt.value))
     elif belt is not None:
         inputs.itemById('belt_length').expression = belt.expression
+    tol = tolerance(name)
+    if tol is not None:
+        inputs.itemById('tolerance').expression = tol.expression
 
 
 def _validate(args):
@@ -245,6 +263,7 @@ def _validate(args):
     ok = v['one'] is not None and v['two'] is not None
     if ok and v['mode'] == 'length':
         ok = args.inputs.itemById('belt_length').isValidExpression
+    ok = ok and args.inputs.itemById('tolerance').isValidExpression
     args.areInputsValid = ok
 
 
@@ -290,7 +309,9 @@ def apply(v):
         unused = name + '_BeltTeeth'
 
     length = _length(name, v['profile'], v['mode'])
-    common.set_param(name, expression(v['profile'], teeth[0], teeth[1], length), 'mm', 'Center distance (FTC Tools)')
+    tol = common.set_param(name + '_Tolerance', v['tolerance'], 'mm', 'Added to the center distance (FTC Tools)')
+    common.set_param(name, expression(v['profile'], teeth[0], teeth[1], length, tol.name), 'mm',
+                     'Center distance (FTC Tools)')
     try:
         if dim is None:
             dim = _add_dimension(one, two)
@@ -407,7 +428,9 @@ def follow_profile(circle, key):
             teeth.append(tag['teeth'] if tag else own)
             if tag:
                 replaced.append((own, tag['teeth']))
-        common.set_param(name, expression(key, teeth[0], teeth[1], _length(name, key, made['mode'])), 'mm')
+        tol = tolerance(name)
+        common.set_param(name, expression(key, teeth[0], teeth[1], _length(name, key, made['mode']),
+                                          tol.name if tol else None), 'mm')
         # Belts on it follow the new pitch and tooth parameters; then the
         # replaced ones are unreferenced and can go.
         links.relink(belt_link(name, made['profile'], made['mode']), belt_link(name, key, made['mode']))

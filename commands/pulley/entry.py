@@ -386,7 +386,7 @@ def _draw_preview(inputs):
     link.isVisible = v['teeth_link'] is not None or v['follow']
     link.text = v['teeth_link'] or ('Derived circle' if v['follow'] else '')
     try:
-        comp, frame = _placement(v['center'], v['plane'])
+        comp, frame = _placement(v['center'], v['plane'], _edit.get('feature'))
         solid = _solid(_options(v), frame)
     except PulleyError:
         return
@@ -615,7 +615,7 @@ def _edit_execute(args):
     v = _read_inputs(args.command.commandInputs)
     # Values that can't make a pulley: say why, as create does, and change nothing.
     try:
-        _solid(_options(v), _placement(v['center'], v['plane'])[1])
+        _solid(_options(v), _placement(v['center'], v['plane'], feature)[1])
     except PulleyError as e:
         ui.messageBox(str(e), 'Pulley')
         return
@@ -694,7 +694,7 @@ def _compute(args):
     try:
         base = next(f for f in feature.features if f.objectType == adsk.fusion.BaseFeature.classType())
         center, plane = _dependencies(feature)
-        _, frame = _placement(center, plane)
+        _, frame = _placement(center, plane, feature)
         _follow_circle(feature, center)
         o = _feature_options(feature)
         solid = _solid(o, frame)
@@ -839,7 +839,7 @@ def _outward(native):
     return normal
 
 
-def _space(entity):
+def _space(entity, feature=None):
     """Where a pulley picked on entity goes: (component, that component's
     occurrence in the pick's assembly path or None, transforms taking the
     entity's own component space to that component's space).
@@ -847,7 +847,10 @@ def _space(entity):
     Normally the component that owns the entity. Nothing can be added inside
     a component linked from another design (an imported goBILDA part), so a
     pick inside one goes in the component holding the outermost linked
-    occurrence."""
+    occurrence. A pick on a part's edge or face goes beside that part, in the
+    component holding it, not inside it. `feature` is the existing Pulley or
+    Belt being recomputed or edited: one already inside the part it was picked
+    on stays there."""
     leaf = entity.assemblyContext
     outer = None
     occ = leaf
@@ -855,8 +858,11 @@ def _space(entity):
         if occ.isReferencedComponent:
             outer = occ
         occ = occ.assemblyContext
+    native = _native(entity)
+    if outer is None and leaf is not None and hasattr(native, 'body') and not _inside(feature, _owner(native)):
+        outer = leaf
     if outer is None:
-        return _owner(_native(entity)), leaf, []
+        return _owner(native), leaf, []
     parent = outer.assemblyContext
     steps = [leaf.transform2]   # to root
     if parent is not None:
@@ -866,6 +872,11 @@ def _space(entity):
     return (parent.component if parent is not None else _design().rootComponent), parent, steps
 
 
+def _inside(feature, comp):
+    """feature's component is directly under comp."""
+    return feature is not None and any(o.component == feature.parentComponent for o in comp.occurrences)
+
+
 def _moved(geometry, steps):
     geometry = geometry.copy()
     for m in steps:
@@ -873,7 +884,7 @@ def _moved(geometry, steps):
     return geometry
 
 
-def _placement(center, plane):
+def _placement(center, plane, feature=None):
     """(component, (origin, x, y, z)) with the frame in that component's space.
 
     The pulley goes in a new component under that component (see _space).
@@ -884,7 +895,7 @@ def _placement(center, plane):
     if center is None:
         raise PulleyError('Pick a center.')
     native = _native(center)
-    comp, comp_occ, steps = _space(center)
+    comp, comp_occ, steps = _space(center, feature)
     t = native.objectType
     origin = _moved(center_point(native), steps)
 
