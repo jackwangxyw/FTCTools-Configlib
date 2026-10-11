@@ -839,7 +839,7 @@ def _outward(native):
     return normal
 
 
-def _space(entity, feature=None):
+def _space(entity, feature=None, other=None):
     """Where a pulley picked on entity goes: (component, that component's
     occurrence in the pick's assembly path or None, transforms taking the
     entity's own component space to that component's space).
@@ -848,19 +848,34 @@ def _space(entity, feature=None):
     a component linked from another design (an imported goBILDA part), so a
     pick inside one goes in the component holding the outermost linked
     occurrence. A pick on a part's edge or face goes beside that part, in the
-    component holding it, not inside it. `feature` is the existing Pulley or
-    Belt being recomputed or edited: one already inside the part it was picked
-    on stays there."""
-    leaf = entity.assemblyContext
-    outer = None
-    occ = leaf
-    while occ is not None:
-        if occ.isReferencedComponent:
-            outer = occ
-        occ = occ.assemblyContext
+    component holding it, not inside it. A belt (`other` is its second pick)
+    goes no deeper than the component that holds both picks.
+
+    `feature` is the existing Pulley or Belt being recomputed or edited: it
+    stays in the component it is in, whatever rule put it there."""
     native = _native(entity)
-    if outer is None and leaf is not None and hasattr(native, 'body') and not _inside(feature, _owner(native)):
-        outer = leaf
+    path = []   # the pick's occurrences, its own first, top level last
+    occ = entity.assemblyContext
+    while occ is not None:
+        path.append(occ)
+        occ = occ.assemblyContext
+    leaf = path[0] if path else None
+    if not path or _inside(feature, _owner(native)):
+        return _owner(native), leaf, []
+    outer = next((o for o in path if _inside(feature, _holder(o))), None)
+    if outer is None:
+        outer = next((o for o in reversed(path) if o.isReferencedComponent), None)
+        if outer is None and hasattr(native, 'body'):
+            outer = leaf
+        if other is not None:
+            shared = set()
+            occ = other.assemblyContext
+            while occ is not None:
+                shared.add(occ.fullPathName)
+                occ = occ.assemblyContext
+            apart = next((o for o in reversed(path) if o.fullPathName not in shared), None)
+            if apart is not None and (outer is None or path.index(apart) > path.index(outer)):
+                outer = apart
     if outer is None:
         return _owner(native), leaf, []
     parent = outer.assemblyContext
@@ -877,6 +892,11 @@ def _inside(feature, comp):
     return feature is not None and any(o.component == feature.parentComponent for o in comp.occurrences)
 
 
+def _holder(occ):
+    """The component an occurrence is in."""
+    return occ.assemblyContext.component if occ.assemblyContext else _design().rootComponent
+
+
 def _moved(geometry, steps):
     geometry = geometry.copy()
     for m in steps:
@@ -884,7 +904,7 @@ def _moved(geometry, steps):
     return geometry
 
 
-def _placement(center, plane, feature=None):
+def _placement(center, plane, feature=None, other=None):
     """(component, (origin, x, y, z)) with the frame in that component's space.
 
     The pulley goes in a new component under that component (see _space).
@@ -895,7 +915,7 @@ def _placement(center, plane, feature=None):
     if center is None:
         raise PulleyError('Pick a center.')
     native = _native(center)
-    comp, comp_occ, steps = _space(center, feature)
+    comp, comp_occ, steps = _space(center, feature, other)
     t = native.objectType
     origin = _moved(center_point(native), steps)
 

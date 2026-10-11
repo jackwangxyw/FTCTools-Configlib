@@ -888,12 +888,12 @@ def _placement(center, plane, toward, flip, feature=None):
     distance is pulley 2's center from pulley 1's in the belt plane (None
     without pulley 2)."""
     center, plane = _center_and_plane(center, plane)
-    comp, (origin, fx, fy, z) = pulley_entry._placement(center, plane, feature)
+    target = _center_and_plane(toward, None)[0]
+    comp, (origin, fx, fy, z) = pulley_entry._placement(center, plane, feature, target)
     d = fx.copy()
     dist = None
     if toward is not None:
-        target, _ = _center_and_plane(toward, None)
-        d = origin.vectorTo(_point_in(target, comp, pulley_entry._space(center, feature)[1]))
+        d = origin.vectorTo(_point_in(target, comp, pulley_entry._space(center, feature, target)[1]))
         along = z.copy()
         along.scaleBy(d.dotProduct(z))
         d.subtract(along)
