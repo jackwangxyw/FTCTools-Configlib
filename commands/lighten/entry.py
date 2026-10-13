@@ -59,7 +59,6 @@ _feature_def = None
 _edit = {}
 _cache = {'key': None, 'pockets': None}
 _overlay = []
-_creating = [False]
 
 
 
@@ -434,13 +433,13 @@ def _create_feature(v, solid):
     cf_input.addCustomParameter('extent', 'ExtentMode', adsk.core.ValueInput.createByReal(_extent_index(v['extent'])), '', False)
     _add_dependencies(cf_input.addDependency, v)
     cf_input.setStartAndEndFeatures(base, combine)
-    # Fusion computes the feature once inside add. The base feature already
-    # holds exactly this solid, so that compute is skipped.
-    _creating[0] = True
-    try:
-        feature = comp.features.customFeatures.add(cf_input)
-    finally:
-        _creating[0] = False
+    # Fusion computes the feature once inside add, and that compute is not
+    # skipped although the base feature already holds this solid: Fusion
+    # matches the faces of a body placed with bRepBodies.add wrongly to the
+    # next updateBody, so an Offset Face on a pocket wall jumped to other
+    # walls on the first recompute. From one updateBody to the next it keeps
+    # them. The pockets are cached, so this compute is only the sweep.
+    feature = comp.features.customFeatures.add(cf_input)
     _remember_face(feature, v['face'])
     return feature
 
@@ -678,8 +677,6 @@ def _restore_timeline():
 
 def _compute(args):
     feature = args.customFeature
-    if _creating[0]:
-        return
     try:
         base, _ = _children(feature)
         face, struts, exclude, upto = _dependencies(feature)
