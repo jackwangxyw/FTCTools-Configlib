@@ -749,7 +749,7 @@ def _dependencies(feature, skip_lost=False):
 def _remember_face(feature, face):
     """Store a point of the picked face on the feature (see _picked_face)."""
     p = _native(face).pointOnFace
-    feature.attributes.add(FACE_ATTR_GROUP, FACE_ATTR, json.dumps([p.x, p.y, p.z]))
+    _native(feature).attributes.add(FACE_ATTR_GROUP, FACE_ATTR, json.dumps([p.x, p.y, p.z]))
 
 
 def _picked_face(feature, face):
@@ -760,8 +760,10 @@ def _picked_face(feature, face):
     the pieces as siblings, and once Lighten has cut one the dependency can
     come back as another. The point stored at pick time says which one it
     was. Features made before the point was stored keep what Fusion gives.
+    The point is on the feature itself: edited from an assembly, `feature` is
+    an assembly copy without it.
     """
-    attr = feature.attributes.itemByName(FACE_ATTR_GROUP, FACE_ATTR)
+    attr = _native(feature).attributes.itemByName(FACE_ATTR_GROUP, FACE_ATTR)
     if attr is None:
         return face
     point = adsk.core.Point3D.create(*json.loads(attr.value))
