@@ -3,9 +3,10 @@
 The feature is a Fusion custom feature grouping two native features:
     1. a base feature holding one solid: every pocket swept to the cut depth
     2. a combine that cuts that solid from the face's body
-Wall, strut, fillet radius, min pocket width and depth are custom parameters,
-so they show up in Change Parameters and accept expressions. The face, strut curves, excluded
-profiles and to-object target are dependencies. When any of them change, the
+Wall, strut, fillet radius, min pocket width, depth and edge wall are custom
+parameters, so they show up in Change Parameters and accept expressions. The
+face, strut curves, excluded profiles, edges with their own wall and to-object
+target are dependencies. When any of them change, the
 compute handler rebuilds the pocket solid in place with BaseFeature.updateBody,
 which keeps the body's identity so the combine never loses its tool.
 
@@ -21,7 +22,7 @@ import traceback
 import adsk.core
 import adsk.fusion
 
-from .. import panel
+from .. import links, panel
 from . import geometry
 from .geometry import LightenError
 
@@ -35,7 +36,8 @@ FEATURE_ID = 'FTCToolsLighten'
 ICONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
 
 SETTINGS_PATH = os.path.join(os.getenv('APPDATA') or os.path.expanduser('~'), 'FTCTools', 'lighten.json')
-DEFAULTS = {'wall': '4 mm', 'strut': '4 mm', 'radius': '2 mm', 'minwidth': '0 mm', 'extent': 'all', 'depth': '3 mm'}
+DEFAULTS = {'wall': '4 mm', 'strut': '4 mm', 'radius': '2 mm', 'minwidth': '0 mm', 'extent': 'all', 'depth': '3 mm',
+            'edgewall': '6 mm'}
 
 # Stored on the feature by index, so only append.
 EXTENTS = [('all', 'All'), ('distance', 'Distance'), ('object', 'To object')]
@@ -44,7 +46,8 @@ LENGTHS = [('wall', 'WallThickness', 'Wall thickness'),
            ('strut', 'StrutThickness', 'Strut thickness'),
            ('radius', 'FilletRadius', 'Fillet radius'),
            ('minwidth', 'MinPocketWidth', 'Min width'),
-           ('depth', 'Depth', 'Depth')]
+           ('depth', 'Depth', 'Depth'),
+           ('edgewall', 'EdgeWallThickness', 'Edge wall')]
 POSITIVE = ('wall', 'strut', 'radius')  # minwidth may be 0, meaning off
 
 FACE_ATTR_GROUP = 'FTCTools'
@@ -161,6 +164,11 @@ def _build_inputs(cmd, values):
         inputs.addValueInput(key, label, units, adsk.core.ValueInput.createByString(values[key]))
     inputs.itemById('minwidth').tooltip = 'Cut off pocket fingers and channels narrower than this. 0 turns it off.'
 
+    sel = inputs.addSelectionInput('edges', 'Edges', 'Edges of the face that get the edge wall instead, such as along a bend')
+    sel.addSelectionFilter('Edges')
+    sel.setSelectionLimits(0, 0)
+    inputs.addValueInput('edgewall', 'Edge wall', units, adsk.core.ValueInput.createByString(values['edgewall']))
+
     dd = inputs.addDropDownCommandInput('extent', 'Extent', adsk.core.DropDownStyles.TextListDropDownStyle)
     for key, label in EXTENTS:
         dd.listItems.add(label, key == values['extent'])
@@ -183,6 +191,7 @@ def _update_visibility(inputs):
     mode = _extent_key(inputs)
     inputs.itemById('depth').isVisible = mode == 'distance'
     inputs.itemById('object').isVisible = mode == 'object'
+    inputs.itemById('edgewall').isVisible = inputs.itemById('edges').selectionCount > 0
 
 
 def _selections(inputs, input_id):
@@ -209,6 +218,7 @@ def _read_inputs(inputs):
         'face': _selections(inputs, 'face')[0],
         'struts': _selections(inputs, 'struts'),
         'exclude': _selections(inputs, 'exclude'),
+        'edges': _selections(inputs, 'edges'),
         'extent': mode,
         'upto': _selections(inputs, 'object')[0] if mode == 'object' else None,
     })
@@ -221,6 +231,15 @@ STRUT_TYPES = (adsk.fusion.SketchLine.classType(), adsk.fusion.SketchArc.classTy
 def _pre_select(args):
     if args.activeInput.id == 'struts' and args.selection.entity.objectType not in STRUT_TYPES:
         args.isSelectable = False
+    elif args.activeInput.id == 'edges':
+        # Only the picked face's own edges.
+        faces = _selections(args.activeInput.parentCommand.commandInputs, 'face')
+        if not faces:
+            args.isSelectable = False
+            return
+        face = _native(faces[0])
+        edge = _native(args.selection.entity)
+        args.isSelectable = any(e == edge for loop in face.loops for e, _ in geometry.loop_coedges(loop))
 
 
 _retoggling = [False]
@@ -235,8 +254,10 @@ def _input_changed(args):
             inputs.itemById('object').hasFocus = True
         else:
             _focus_struts(inputs)
-    elif args.input.id in ('struts', 'exclude') and not _retoggling[0] and not _edit.get('populating'):
+    elif args.input.id in ('struts', 'exclude', 'edges') and not _retoggling[0] and not _edit.get('populating'):
         _toggle_duplicates(inputs.itemById(args.input.id))
+    if args.input.id == 'edges':
+        _update_visibility(inputs)
     elif args.input.id == 'face':
         _focus_struts(inputs)
 
@@ -287,6 +308,9 @@ def _validate(args):
     for key, _, _ in LENGTHS[:4]:
         v = inputs.itemById(key)
         ok = ok and v.isValidExpression and (v.value > 0 if key in POSITIVE else v.value >= 0)
+    if inputs.itemById('edges').selectionCount:
+        v = inputs.itemById('edgewall')
+        ok = ok and v.isValidExpression and v.value > inputs.itemById('wall').value
     mode = _extent_key(inputs)
     if mode == 'distance':
         v = inputs.itemById('depth')
@@ -371,9 +395,10 @@ def _cached_pockets(v, dims):
     key = (v['face'].entityToken,
            tuple(e.entityToken for e in v['struts']),
            tuple(e.entityToken for e in v['exclude']),
-           dims['wall'], dims['strut'], dims['radius'], dims['minwidth'])
+           tuple(e.entityToken for e in v['edges']),
+           dims['wall'], dims['strut'], dims['radius'], dims['minwidth'], dims['edgewall'])
     if _cache['key'] != key:
-        _cache['pockets'] = _pockets_for(v['face'], v['struts'], v['exclude'], dims)
+        _cache['pockets'] = _pockets_for(v['face'], v['struts'], v['exclude'], v['edges'], dims)
         _cache['key'] = key
     return adsk.fusion.TemporaryBRepManager.get().copy(_cache['pockets'])
 
@@ -427,7 +452,7 @@ def _create_feature(v, solid):
     cf_input = comp.features.customFeatures.createInput(_feature_def)
     for key, name, _ in LENGTHS:
         cf_input.addCustomParameter(key, name, adsk.core.ValueInput.createByString(v[key]), units,
-                                    key != 'depth' or v['extent'] == 'distance')
+                                    (key != 'depth' or v['extent'] == 'distance') and (key != 'edgewall' or bool(v['edges'])))
     # The extent mode lives in a hidden parameter so compute can read it even
     # during customFeatures.add, before any other state could be stored.
     cf_input.addCustomParameter('extent', 'ExtentMode', adsk.core.ValueInput.createByReal(_extent_index(v['extent'])), '', False)
@@ -469,6 +494,8 @@ def _add_dependencies(add, v):
         add('strut%d' % i, curve)
     for i, profile in enumerate(_unique(v['exclude'])):
         add('exclude%d' % i, profile)
+    for i, edge in enumerate(_unique(v['edges'])):
+        add('edge%d' % i, edge)
     if v['upto'] is not None:
         add('upto', v['upto'])
 
@@ -491,7 +518,7 @@ def _sync_dependencies(feature, v):
             deps.add(dep_id, entity)
         elif dep.entity is None or dep.entity.entityToken != entity.entityToken:
             dep.entity = entity
-    for prefix, key in (('strut', 'struts'), ('exclude', 'exclude')):
+    for prefix, key in (('strut', 'struts'), ('exclude', 'exclude'), ('edge', 'edges')):
         wanted = {e.entityToken: e for e in _unique(v[key])}
         kept = set()
         top = -1
@@ -524,7 +551,7 @@ def _edit_created(args):
     feature = _native(adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity))
     values = _load_settings()
     for key, _, _ in LENGTHS:
-        param = feature.parameters.itemById(key)
+        param = links.param(feature, key)
         values[key] = param.expression if param else '0 mm'  # made before this parameter existed
     values['extent'] = _extent_of(feature)
 
@@ -550,7 +577,7 @@ def _show_sketches(feature):
     """Turn on the sketches the feature's struts and exclusions are in, as
     Fusion does for an extrude's profile sketch. Returns (object, property)
     pairs to turn back off when the dialog closes."""
-    _, struts, exclude, _ = _dependencies(feature, skip_lost=True)
+    _, struts, exclude, _, _ = _dependencies(feature, skip_lost=True)
     sketches = {}
     for e in struts + exclude:
         sketch = _native(e).parentSketch
@@ -591,7 +618,7 @@ def _edit_activate(args):
     _roll_before(feature)
 
     inputs = args.command.commandInputs
-    face, struts, exclude, upto = _dependencies(feature, skip_lost=True)
+    face, struts, exclude, edges, upto = _dependencies(feature, skip_lost=True)
     # Every addSelection fires inputChanged and validate, and a preview when one
     # is subscribed. Fusion's own work for each preview cost about 30 ms per
     # selection even with a handler that returned at once (4.6 s for 130 struts),
@@ -600,7 +627,7 @@ def _edit_activate(args):
     try:
         for input_id, entities in (('face', [face] if face is not None else []),
                                    ('struts', _unique(struts)), ('exclude', _unique(exclude)),
-                                   ('object', [upto] if upto is not None else [])):
+                                   ('edges', _unique(edges)), ('object', [upto] if upto is not None else [])):
             for entity in entities:
                 inputs.itemById(input_id).addSelection(entity)
     finally:
@@ -629,17 +656,20 @@ def _edit_execute(args):
     _remember_face(feature, v['face'])
     # Each write costs time on a live feature even when the value is the same.
     for key, _, _ in LENGTHS:
-        param = feature.parameters.itemById(key)
+        param = links.param(feature, key)
         if param:
             if param.expression != v[key]:
                 param.expression = v[key]
-        elif _evaluate(v)[key] != 0:
+        elif _evaluate(v)[key] != 0 and (key != 'edgewall' or v['edges']):
             # Custom parameters can only be added when a feature is created.
             ui.messageBox('This Lighten was made before %s existed. Delete it and create it again to use that.'
                           % key, 'Lighten')
     depth = feature.parameters.itemById('depth')
     if depth.isVisible != (v['extent'] == 'distance'):
         depth.isVisible = v['extent'] == 'distance'
+    edgewall = links.param(feature, 'edgewall')
+    if edgewall is not None and edgewall.isVisible != bool(v['edges']):
+        edgewall.isVisible = bool(v['edges'])
     extent = feature.parameters.itemById('extent')
     if extent.value != _extent_index(v['extent']):
         extent.value = _extent_index(v['extent'])
@@ -679,9 +709,9 @@ def _compute(args):
     feature = args.customFeature
     try:
         base, _ = _children(feature)
-        face, struts, exclude, upto = _dependencies(feature)
+        face, struts, exclude, edges, upto = _dependencies(feature)
         dims = _feature_dims(feature)
-        pockets = _cached_pockets({'face': face, 'struts': struts, 'exclude': exclude}, dims)
+        pockets = _cached_pockets({'face': face, 'struts': struts, 'exclude': exclude, 'edges': edges}, dims)
         solid = _sweep(face, pockets, _extent_of(feature), dims['depth'], upto)
         base.startEdit()
         try:
@@ -704,7 +734,7 @@ def _compute(args):
 def _feature_dims(feature):
     dims = {}
     for key, _, _ in LENGTHS:
-        param = feature.parameters.itemById(key)
+        param = links.param(feature, key)
         dims[key] = param.value if param else 0.0  # made before this parameter existed
     return dims
 
@@ -727,6 +757,7 @@ def _dependencies(feature, skip_lost=False):
     face = upto = None
     struts = []
     exclude = []
+    edges = []
     for i in range(feature.dependencies.count):
         dep = feature.dependencies.item(i)
         if dep.entity is None:
@@ -742,7 +773,10 @@ def _dependencies(feature, skip_lost=False):
             struts.append((int(dep.id[5:]), dep.entity))
         elif dep.id.startswith('exclude'):
             exclude.append((int(dep.id[7:]), dep.entity))
-    return face, [e for _, e in sorted(struts)], [e for _, e in sorted(exclude)], upto
+        elif dep.id.startswith('edge'):
+            edges.append((int(dep.id[4:]), dep.entity))
+    return (face, [e for _, e in sorted(struts)], [e for _, e in sorted(exclude)],
+            [e for _, e in sorted(edges)], upto)
 
 
 def _remember_face(feature, face):
@@ -861,11 +895,12 @@ def _depth_for(face, mode, distance, upto):
     return depth
 
 
-def _pockets_for(face, struts, exclude, dims):
+def _pockets_for(face, struts, exclude, edges, dims):
     """Pocket sheet on the face plane, in component space. Inputs are as selected."""
     face = _native(face)
     struts = [_native(c) for c in struts]
     exclude = [_native(p) for p in exclude]
+    edges = [_native(e) for e in edges]
     plane = face.geometry
     comp = face.body.parentComponent
     for entity in struts + exclude:
@@ -878,8 +913,15 @@ def _pockets_for(face, struts, exclude, dims):
         outer = next(l for l in profile.profileLoops if l.isOuter)
         loops.append([_onto_plane(_to_model(pc.geometry, profile.parentSketch), plane) for pc in outer.profileCurves])
 
+    own = [e for loop in face.loops for e, _ in geometry.loop_coedges(loop)]
+    if any(e not in own for e in edges):
+        raise LightenError('Edges must be edges of the face.')
+    if edges and dims['edgewall'] <= dims['wall']:
+        raise LightenError('Edge wall must be thicker than the wall.')
+
     pockets = geometry.compute_pockets(face, plane.normal, strut_curves, loops,
-                                       dims['wall'], dims['strut'], dims['radius'], dims['minwidth'])
+                                       dims['wall'], dims['strut'], dims['radius'], dims['minwidth'],
+                                       [e.geometry for e in edges], dims['edgewall'])
     if pockets is None:
         raise LightenError('Nothing left to pocket. Reduce the wall, strut or fillet size.')
     return pockets
