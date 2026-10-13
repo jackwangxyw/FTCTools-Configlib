@@ -3,7 +3,7 @@
 All work is done on planar sheet bodies with the TemporaryBRepManager, so nothing
 here touches the timeline. The pocket region is
 
-    grow(shrink(face, wall + r) - bands(edges, 2 (edge wall + r)) - bands(struts, strut + 2r)
+    grow(shrink(face, wall + r) - bands(special edges, 2 (special wall + r)) - bands(struts, strut + 2r)
          - grow(exclusions, wall + r), r)
 
 grow and shrink are exact offsets with round corners, built as
@@ -373,7 +373,7 @@ def trim_thin(region, normal, half_width):
 
 
 def compute_pockets(face, normal, strut_curves, exclusion_loops, wall, strut, radius, min_width=0,
-                    edge_curves=(), edge_wall=0):
+                    special=()):
     """Return a sheet body whose faces are the pockets, lying on the face's plane.
 
     face            planar BRepFace to lighten
@@ -382,17 +382,19 @@ def compute_pockets(face, normal, strut_curves, exclusion_loops, wall, strut, ra
     exclusion_loops list of closed loops, each a list of Curve3D on the face plane
     wall, strut, radius, min_width   lengths in cm. min_width 0 (or not above
                     2 * radius) leaves thin pocket fingers alone.
-    edge_curves     boundary edges of the face (Curve3D) that keep edge_wall
-                    (thicker than wall) instead, along their own length only
+    special         (curves, special wall) pairs: boundary edges of the face
+                    (Curve3D) that keep that wall (thicker than wall) instead,
+                    along their own length only
     """
     if radius <= 0:
         raise LightenError('Fillet radius must be positive.')
 
     region = shrink(_tb().copy(face), normal, wall + radius)
-    for curve in edge_curves:
-        if region is None:
-            return None
-        region = _merge(region, band(curve, normal, edge_wall + radius), DIFFERENCE)
+    for curves, special_wall in special:
+        for curve in curves:
+            if region is None:
+                return None
+            region = _merge(region, band(curve, normal, special_wall + radius), DIFFERENCE)
     for curve in strut_curves:
         if region is None:
             return None
