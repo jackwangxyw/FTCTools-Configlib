@@ -520,7 +520,9 @@ def _evaluate(v):
 # ---------------------------------------------------------------------- edit
 
 def _edit_created(args):
-    feature = adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity)
+    # Edited from an assembly, the selection is an assembly copy of the
+    # feature, which Fusion can invalidate while the dialog is open.
+    feature = _native(adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity))
     values = _load_settings()
     for key, _, _ in LENGTHS:
         param = feature.parameters.itemById(key)

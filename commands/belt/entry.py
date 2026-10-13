@@ -620,7 +620,9 @@ def _feature_values(feature):
 
 
 def _edit_created(args):
-    feature = adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity)
+    # Edited from an assembly, the selection is an assembly copy of the
+    # feature, which Fusion can invalidate while the dialog is open.
+    feature = pulley_entry._native(adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity))
     _edit.clear()
     _edit.update({'feature': feature, 'restore': None, 'rolled': False, 'populated': False})
     auto = links.param(feature, 'auto')
