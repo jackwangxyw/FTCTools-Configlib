@@ -1,4 +1,4 @@
-"""The shared "FTC Tools" panels in the Design workspace: one on the Solid tab,
+"""The shared "FTCTools" panels in the Design workspace: one on the Solid tab,
 one on the Sketch tab (shown while a sketch is being edited), and one on the
 Sheet Metal tab."""
 
@@ -11,7 +11,7 @@ SKETCH_TAB_ID = 'SketchTab'
 SKETCH_PANEL_ID = 'FTCToolsSketchPanel'
 SHEET_METAL_TAB_ID = 'SheetMetalTab'
 SHEET_METAL_PANEL_ID = 'FTCToolsSheetMetalPanel'
-PANEL_NAME = 'FTC TOOLS'
+PANEL_NAME = 'FTCTools'
 
 
 def _ids(sketch, sheet_metal):

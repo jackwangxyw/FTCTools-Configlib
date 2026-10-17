@@ -228,7 +228,7 @@ def apply(circle, key, teeth, kind, module=None, chain=True):
     current = params.itemByName(tag['teeth']) if tag is not None else None
     teeth_param = common.free_name(param_base(key, teeth, module), current)
     if current is None:
-        common.set_param(teeth_param, str(int(teeth)), '', 'Tooth count (FTC Tools)')
+        common.set_param(teeth_param, str(int(teeth)), '', 'Tooth count (FTCTools)')
     else:
         if current.name != teeth_param:
             current.name = teeth_param  # Fusion updates the expressions using it

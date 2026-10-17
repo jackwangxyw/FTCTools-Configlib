@@ -298,20 +298,20 @@ def apply(v):
             teeth.append(tag['teeth'])
         else:
             own = '%s_Teeth%d' % (name, index)
-            common.set_param(own, str(int(count)), '', 'Pulley tooth count (FTC Tools)')
+            common.set_param(own, str(int(count)), '', 'Pulley tooth count (FTCTools)')
             teeth.append(own)
 
     if v['mode'] == 'teeth':
-        common.set_param(name + '_BeltTeeth', str(int(v['belt_teeth'])), '', 'Belt tooth count (FTC Tools)')
+        common.set_param(name + '_BeltTeeth', str(int(v['belt_teeth'])), '', 'Belt tooth count (FTCTools)')
         unused = name + '_BeltLength'
     else:
-        common.set_param(name + '_BeltLength', v['belt_length'], 'mm', 'Belt pitch length (FTC Tools)')
+        common.set_param(name + '_BeltLength', v['belt_length'], 'mm', 'Belt pitch length (FTCTools)')
         unused = name + '_BeltTeeth'
 
     length = _length(name, v['profile'], v['mode'])
-    tol = common.set_param(name + '_Tolerance', v['tolerance'], 'mm', 'Added to the center distance (FTC Tools)')
+    tol = common.set_param(name + '_Tolerance', v['tolerance'], 'mm', 'Added to the center distance (FTCTools)')
     common.set_param(name, expression(v['profile'], teeth[0], teeth[1], length, tol.name), 'mm',
-                     'Center distance (FTC Tools)')
+                     'Center distance (FTCTools)')
     try:
         if dim is None:
             dim = _add_dimension(one, two)
