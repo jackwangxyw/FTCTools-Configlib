@@ -1,4 +1,4 @@
-# FTCTools
+# FTCTools for Fusion - Configlib
 
 <div align="center">
 
@@ -9,7 +9,7 @@
 
 </div>
 
-Parametric tools for FTC robot design in Autodesk Fusion. Everything acts as its own feature/tool inside of Fusion. The custom features show up in the timeline and are editable after the fact. The sketch tools act as their own "constraints" as well and are editable once applied by double clicking.
+Parametric tools for FTC robot design in Autodesk Fusion. Part of the [Configlib family](https://docs.google.com/forms/d/e/1FAIpQLSfvtfp1Wx4EGuyuSyEloqT9QSgdV30AA3W1iE03NG8OWfAHQA/viewform) of tools from [Onshape](https://cad.onshape.com/appstore/apps/Manufacturers%20Models/6004ec5e83c40b107c183347) but ported into Fusion. Join the [Discord](https://discord.gg/B2hrtbp2ez) or read the [docs](https://docs.google.com/document/d/1VPqlQXmah0Iye18LiESBxKin5IhrcJWbNSKKjIv0kAk/edit?tab=t.0). Everything acts as its own feature/tool inside of Fusion. The custom features show up in the timeline and are editable after the fact. The sketch tools act as their own "constraints" as well and are editable once applied by double clicking.
 
 ## Features
 
