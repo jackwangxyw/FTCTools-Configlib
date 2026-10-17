@@ -24,7 +24,7 @@ Parametric tools for FTC robot design in Autodesk Fusion. Everything acts as its
 
 ## Install
 
-Download `FTCTools-0.2.1.zip` from the [releases page](https://github.com/jackwangxyw/FTCTools/releases) and unzip it. The file works for both Windows and Mac. After downloading and unzipping, you can either:
+Download `FTCTools-0.2.2.zip` from the [releases page](https://github.com/jackwangxyw/FTCTools/releases) and unzip it. The file works for both Windows and Mac. After downloading and unzipping, you can either:
 
 - **Link it from Fusion.** Open Scripts and Add-Ins (Shift+S), click the + next to Add-Ins, and pick the `FTCTools` folder. Keep the folder somewhere it won't get deleted, since Fusion loads it from there.
 - **Or move it into Fusion's add-in folder**, and restart Fusion:
@@ -37,7 +37,7 @@ To update, replace the folder with the new one and restart Fusion. To remove it,
 
 ## If you can't find them for whatever reason
 
-An **FTC TOOLS** panel on the Solid tab toolbar has Lighten, Pulley and Belt. While you're editing a sketch, an FTC TOOLS panel on the Sketch tab toolbar has Pulley & Gear Diameter and Center Distance.
+An **FTCTools** panel on the Solid tab toolbar has Lighten, Pulley and Belt, and one on the Sheet Metal tab has Lighten. While you're editing a sketch, an FTCTools panel on the Sketch tab toolbar has Pulley & Gear Diameter and Center Distance.
 
 ## Solid tools
 
@@ -52,6 +52,7 @@ Pockets a planar face, leaving a wall around its edges and struts along sketch c
 - **Excluded regions**: sketch profiles to leave solid, with a wall around them. Use these for bosses, bearing holes etc if they are not already auto excluded.
 - **Wall thickness**, **Strut thickness**, **Fillet radius**: Wall thickness sets the thickness of the wall, strut thickness sets the thickness of the struts, choose these based on the material you are working with. Set the fillet radius slightly bigger than your endmill radius.
 - **Min pocket width**: cuts off pocket fingers and channels narrower than this. 0 turns it off.
+- **Special edges 1 to 3**, **Special wall 1 to 3**: edges of the face that need more clearance than the normal wall, like along a bend, each group with its own wall. Use it for sheet metal flange support errors instead of offsetting pocket faces. Each group shows once the one before it has edges, and a special wall must be thicker than the wall. Lightens made before 0.2.2 don't have these; delete and recreate them to add special edges.
 - **Extent**: All (through the whole body), Distance, or To object.
 
 The strut and excluded region sketches have to be parallel to the face and in the same component as it. They don't have to be on the face itself.
@@ -74,7 +75,7 @@ A timing pulley generator: GT2 2mm, GT2 3mm, HTD 3mm or HTD 5mm, 6 to 400 teeth.
 
 The component, body and timeline feature are named after the pulley, like `HTD5 24T`, and the names update when a linked tooth count or profile changes (unless you renamed them yourself). Moving the center point moves the pulley. You can also make one at the origin and place the component with joints or constraints.
 
-If the center is inside a part inserted from another design (like a goBILDA pulley), the new component goes next to that part in its assembly, since Fusion can't add anything inside it.
+If the center is on a part (like an imported goBILDA pulley), the new component goes next to that part in its assembly, not inside it. A Belt goes in the component that holds both pulleys.
 ### <img src="commands/belt/resources/32x32.png" width="24"> Belt
 
 A closed timing belt around two pulleys or standalone as its own component.
@@ -127,6 +128,8 @@ Dimensions two points or circles (their centers), or two parallel lines, to the 
 <img src="docs/images/center-dialog.png" alt="Edit Center Distance dialog">
 
 Pick the profile, both pulleys' tooth counts and the belt, either as a tooth count or a pitch length. The center distance goes in a user parameter named `CC1`, `CC2`, ..., and the dimension just reads `CC1`. Belt teeth or length go in `CC1_BeltTeeth` or `CC1_BeltLength`.
+
+**Tolerance** is added on top of the exact center distance, for belt stretch. It goes in `CC1_Tolerance`, and Belt takes it into account when checking fit and picking the tooth count.
 
 Picking circles made with Pulley & Gear Diameter fills in their profile and tooth count, and the center distance uses their parameters directly. Change a pulley's tooth count and the circle resizes and the centers move with it.
 
