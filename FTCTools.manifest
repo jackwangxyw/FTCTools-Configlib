@@ -6,7 +6,7 @@
 	"description": {
 		"": "Parametric tools for FTC robot design.\nhttps://github.com/jackwangxyw/FTCTools-Configlib"
 	},
-	"version": "0.2.2",
+	"version": "0.3.0",
 	"runOnStartup": true,
 	"supportedOS": "windows|mac",
 	"editEnabled": true

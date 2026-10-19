@@ -25,7 +25,7 @@ Parametric tools for FTC robot design in Autodesk Fusion. Part of the [Configlib
 
 ## Install
 
-Download `FTCTools-0.2.2.zip` from the [releases page](https://github.com/jackwangxyw/FTCTools/releases) and unzip it. The file works for both Windows and Mac. After downloading and unzipping, you can either:
+Download `FTCTools-0.3.0.zip` from the [releases page](https://github.com/jackwangxyw/FTCTools/releases) and unzip it. The file works for both Windows and Mac. After downloading and unzipping, you can either:
 
 - **Link it from Fusion.** Open Scripts and Add-Ins (Shift+S), click the + next to Add-Ins, and pick the `FTCTools` folder. Keep the folder somewhere it won't get deleted, since Fusion loads it from there.
 - **Or move it into Fusion's add-in folder**, and restart Fusion:
