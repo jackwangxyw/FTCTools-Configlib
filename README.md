@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/tools-dark.png">
-  <img src="docs/images/tools-light.png" width="650" alt="Lighten, Pulley, Belt, Pulley & Gear Diameter and Center Distance">
+  <img src="docs/images/tools-light.png" width="780" alt="Lighten, Pulley, Belt, Sequential Bridging, Pulley & Gear Diameter and Center Distance">
 </picture>
 
 </div>
@@ -16,6 +16,7 @@ Parametric tools for FTC robot design in Autodesk Fusion. Part of the [Configlib
 - A better lighten tool that works similarly to the one in Onshape, letting you choose the sizes and strut lines. It's fast and parametric, so you don't need to delete the feature and restart after every change like the FRCTools one.
 - Custom generated pulleys, automatic flanges, bores, bearing and hub cutouts, and automatic sequential bridging in the counterbores for clean printing.
 - Custom belts, you can choose to make them at the pulleys themselves, or generate and constrain it after the fact. Pick two pulleys and it works out the closest belt tooth count for you. 
+- Sequential bridging for any counterbored hole, this makes it print clean when facing the build plate. Drawing sketches is annoying, clicking a button is easy for ya'll lazies.
 - Pulley/gear diameter tool in the sketch workspace, select the pulley profile or gear with the module to dimension a circle to the outer, pitch, or root diameters.
 - C to C tool in the sketch workspace to calculate C to C distance between pulleys. Seamlessly works with the pulley/gear tool by filling in parameters when you click two circles dimensioned with the pulley diameter tool.
 - Everything is linked. Build a pulley or belt off your sketch and it follows it: change a tooth count, a profile or a belt length in the sketch and the pulleys and belts update with it.
@@ -37,7 +38,7 @@ To update, replace the folder with the new one and restart Fusion. To remove it,
 
 ## If you can't find them for whatever reason
 
-An **FTCTools** panel on the Solid tab toolbar has Lighten, Pulley and Belt, and one on the Sheet Metal tab has Lighten. While you're editing a sketch, an FTCTools panel on the Sketch tab toolbar has Pulley & Gear Diameter and Center Distance.
+An **FTCTools** panel on the Solid tab toolbar has Lighten, Pulley, Belt and Sequential Bridging, and one on the Sheet Metal tab has Lighten. While you're editing a sketch, an FTCTools panel on the Sketch tab toolbar has Pulley & Gear Diameter and Center Distance.
 
 ## Solid tools
 
@@ -97,6 +98,22 @@ What it fills in depends on what you pick:
 A real belt has a whole number of teeth, so the belt is built to its own exact center distance. If that's more than 0.1 mm off from where pulley 2 actually is, the belt turns yellow in the timeline and the **Status** row says how far off it is. Fix it with a Center Distance in your sketch, or by moving the pulleys.
 
 The belt's teeth are the pulley grooves at zero clearance, so belt and pulley match by construction.
+
+### <img src="commands/bridging/resources/32x32.png" width="24"> Sequential Bridging
+
+Makes counterbored holes printable facing the bed with no supports. Above the counterbore floor it cuts a few layers that step down to the hole, so every layer has something to bridge onto.
+
+<img src="docs/images/bridging-dialog.png" alt="Sequential Bridging dialog">
+
+- **Holes**: click the counterbore floor, the counterbore wall or the hole wall, any of them works. Click as many holes as you want, as long as they're in the same body.
+- **Levels**: 1 is just the slot, 2 adds the square (usually enough), 3 the octagon, 4 the 16-gon.
+- **Layer height**: match your slicer's layer height. 0.2 mm by default.
+
+The counterbore can be any shape: round, hex, square, whatever. The hole has to be round. The layers sit under the floor, so the counterbore ends up a few layers deeper where the bridges are, and the feature errors if the layers would go deeper than the hole itself.
+
+It follows the hole: change the counterbore's depth or size, the hole size, or move it, and the bridging updates. Levels and layer height show up in Change Parameters as `Levels` and `LayerHeight`.
+
+It can't go in a part inserted from another design (like a goBILDA part), since Fusion can't add anything inside it.
 
 ## Sketch tools
 
