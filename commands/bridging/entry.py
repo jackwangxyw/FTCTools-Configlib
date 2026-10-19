@@ -42,7 +42,9 @@ MAX_LEVELS = 4
 # The solid starts this far above the floor so the cut has no coplanar faces.
 LIFT = 0.001  # cm
 TOL = 1e-4  # cm, for matching circle centers and radii
-OVERLAY_COLOR = (255, 255, 255)
+OVERLAY_COLOR = (255, 255, 255)  # preview outline, as Lighten
+OVERLAY_WEIGHT = 2  # a bit thicker than Lighten's: these outlines sit down in small counterbores
+OVERLAY_LIFT = 0.01  # cm above the floor, as Lighten lifts its outline
 
 _handlers = []
 _feature_def = None
@@ -233,29 +235,44 @@ def _draw_preview(inputs):
     """Outline the bridge layers for the current inputs. Inputs that can't be bridged show nothing."""
     _clear_overlay()
     v = _read_inputs(inputs)
+    layer = _evaluate(v['layer'])
     try:
-        solid = _solid(v['floors'], _evaluate(v['layer']), v['levels'])
+        _solid(v['floors'], layer, v['levels'])  # the same checks as OK
     except BridgingError:
         return
-    _show_overlay(_native(v['floors'][0]).body.parentComponent, solid)
+    holes = [_hole(_native(floor)) for floor in v['floors']]
+    _show_overlay(_native(v['floors'][0]).body.parentComponent,
+                  [(hole, _hole_layers(hole, layer, v['levels'])) for hole in holes])
 
 
-def _show_overlay(comp, solid):
+def _show_overlay(comp, layers):
+    """Draw each hole's layer outlines flat on its floor, just above it, as
+    Lighten draws its pockets on the face: the layers themselves are inside
+    the part, where the part hides their edges."""
     points = []
     indices = []
-    for edge in lighten_geometry.body_edges(solid):
-        _, t0, t1 = edge.evaluator.getParameterExtents()
-        _, strokes = edge.evaluator.getStrokes(t0, t1, 0.002)
-        start = len(points) // 3
-        for p in strokes:
-            points += [p.x, p.y, p.z]
-        for i in range(len(strokes) - 1):
-            indices += [start + i, start + i + 1]
+    for (center, normal, _, _), solid in layers:
+        for edge in lighten_geometry.body_edges(solid):
+            _, t0, t1 = edge.evaluator.getParameterExtents()
+            _, strokes = edge.evaluator.getStrokes(t0, t1, 0.002)
+            flat = []
+            for p in strokes:
+                lift = normal.copy()
+                lift.scaleBy(OVERLAY_LIFT - center.vectorTo(p).dotProduct(normal))
+                p.translateBy(lift)
+                flat.append(p)
+            if flat[0].distanceTo(flat[-1]) < TOL and len(flat) == 2:
+                continue  # an edge straight down, which lands on a point
+            start = len(points) // 3
+            for p in flat:
+                points += [p.x, p.y, p.z]
+            for i in range(len(flat) - 1):
+                indices += [start + i, start + i + 1]
     group = comp.customGraphicsGroups.add()
     lines = group.addLines(adsk.fusion.CustomGraphicsCoordinates.create(points), indices, False)
     lines.color = adsk.fusion.CustomGraphicsSolidColorEffect.create(adsk.core.Color.create(*OVERLAY_COLOR, 255))
-    lines.weight = 1
-    lines.depthPriority = 1
+    lines.weight = OVERLAY_WEIGHT
+    lines.depthPriority = 1  # above the face's selection highlight
     _overlay.append(group)
 
 
